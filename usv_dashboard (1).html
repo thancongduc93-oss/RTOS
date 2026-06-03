@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>USV Control Center - Trạm Bờ</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body, html { margin: 0; padding: 0; font-family: 'Inter', sans-serif; overflow: hidden; height: 100vh; }
+        #map { width: 100%; height: 100vh; }
+
+        /* Right Panel - giữ style tương tự file gốc nhưng đẹp hơn */
+        .panel {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(15, 20, 35, 0.92); backdrop-filter: blur(16px);
+            padding: 16px 18px; border-radius: 14px; width: 280px;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5); z-index: 1000;
+            border: 1px solid rgba(0,230,200,0.12); color: #e0e6f0;
+        }
+        .panel h3 {
+            margin: 0 0 10px 0; font-size: 15px; font-weight: 700;
+            background: linear-gradient(135deg,#00e6c8,#00b4d8);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .panel p { margin: 4px 0; font-size: 13px; color: #b0b8cc; }
+        .panel hr { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 10px 0; }
+        .panel b { color: #fff; }
+
+        /* Status indicators */
+        #pi-status { font-weight: 600; color: #ff4757; font-size: 13px; }
+        #boat-gps { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #00e6c8; }
+
+        /* Waypoints list */
+        #waypoints-list {
+            max-height: 120px; overflow-y: auto; font-size: 11px; margin: 8px 0;
+            background: rgba(255,255,255,0.04); padding: 8px; border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace; color: #8892a6;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        #waypoints-list::-webkit-scrollbar { width: 4px; }
+        #waypoints-list::-webkit-scrollbar-thumb { background: rgba(0,230,200,0.3); border-radius: 2px; }
+
+        /* Buttons */
+        .btn {
+            display: block; width: 100%; padding: 10px; margin-top: 8px;
+            border: none; border-radius: 10px; cursor: pointer;
+            font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
+            color: #fff; transition: all 0.2s;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .btn:active { transform: scale(0.97); }
+        #uploadBtn { background: linear-gradient(135deg, #0077b6, #00b4d8); }
+        #startBtn { background: linear-gradient(135deg, #00b341, #00e676); }
+        #clearBtn { background: rgba(255,255,255,0.06); color: #8892a6; border: 1px solid rgba(255,255,255,0.1); }
+
+        /* Compass Widget & Telemetry */
+        .compass-box { margin: 12px 0; text-align: center; }
+        .compass-box .title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #00e6c8; margin-bottom: 6px; font-weight: 600; }
+        .info-row { display: flex; justify-content: space-between; margin: 6px 14px; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+        .info-label { color: #8892a6; text-align: left; }
+        .info-value { color: #00e6c8; font-weight: 700; text-align: right; }
+        .compass-wrap { display: flex; justify-content: center; margin-top: 10px; }
+        .compass {
+            width: 100px; height: 100px; border-radius: 50%;
+            border: 2px solid rgba(0,230,200,0.25); position: relative;
+            background: radial-gradient(circle, rgba(0,230,200,0.04), transparent);
+        }
+        .compass-arrow {
+            position: absolute; top: 50%; left: 50%;
+            width: 3px; height: 40px;
+            background: linear-gradient(to top, transparent, #00e6c8, #00ffcc);
+            transform-origin: bottom center;
+            transform: translateX(-50%) translateY(-100%) rotate(0deg);
+            border-radius: 2px; transition: transform 0.3s ease;
+        }
+        .compass-arrow::after {
+            content: ''; position: absolute; top: -3px; left: 50%; transform: translateX(-50%);
+            border-left: 5px solid transparent; border-right: 5px solid transparent;
+            border-bottom: 8px solid #00ffcc;
+        }
+        .clbl { position: absolute; font-size: 9px; color: #8892a6; font-weight: 600; }
+        .c-n { top: 3px; left: 50%; transform: translateX(-50%); color: #00e6c8; }
+        .c-s { bottom: 3px; left: 50%; transform: translateX(-50%); }
+        .c-e { right: 5px; top: 50%; transform: translateY(-50%); }
+        .c-w { left: 5px; top: 50%; transform: translateY(-50%); }
+        .heading-val { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; color: #00e6c8; margin-top: 4px; }
+
+        /* Toast notification */
+        .toast {
+            position: absolute; z-index: 2000; top: 14px; left: 50%; transform: translateX(-50%) translateY(-10px);
+            background: rgba(0,230,200,0.15); border: 1px solid rgba(0,230,200,0.3);
+            border-radius: 12px; padding: 10px 20px; font-size: 13px; color: #00e6c8;
+            opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* Leaflet popup override */
+        .leaflet-popup-content-wrapper { border-radius: 10px !important; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Right Panel (giữ layout giống file gốc index.html) -->
+<div class="panel">
+    <h3>🚤 USV Control Center (4G/WiFi)</h3>
+    <p id="mqtt-status">MQTT Broker: Đang kết nối...</p>
+    <p id="pi-status">🔴 Pi: Chưa kết nối</p>
+    <p id="boat-gps">Tọa độ thuyền: Đang đợi...</p>
+    <hr>
+
+    <div class="compass-box">
+        <div class="title">🧭 La bàn & Telemetry</div>
+        <div class="info-row"><span class="info-label">Heading</span><span class="info-value" id="boat-heading">—</span></div>
+        <div class="info-row"><span class="info-label">Distance</span><span class="info-value" id="boat-dist">—</span></div>
+        <div class="info-row"><span class="info-label">Motor L|R</span><span class="info-value" id="boat-motors">0% | 0%</span></div>
+        <div class="compass-wrap">
+            <div class="compass">
+                <span class="clbl c-n">N</span><span class="clbl c-s">S</span>
+                <span class="clbl c-e">E</span><span class="clbl c-w">W</span>
+                <div class="compass-arrow" id="compassArrow"></div>
+            </div>
+        </div>
+        <div class="heading-val"><span id="valHeading">0</span>°</div>
+    </div>
+    <hr>
+
+    <p>Click trên bản đồ để tạo điểm (A, B, C...)</p>
+    <div id="waypoints-list"><i>Chưa có điểm nào...</i></div>
+    <button class="btn" id="uploadBtn" onclick="uploadMission()">📤 Gửi Điểm (Upload Mission)</button>
+    <button class="btn" id="startBtn" onclick="startMission()">🚀 Chạy (Start)</button>
+    <button class="btn" id="clearBtn" onclick="clearWaypoints()">🗑️ Xóa Điểm Đã Vẽ</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+<script>
+    var map = L.map('map').setView([16.075444, 108.155151], 17);
+    L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+        maxZoom: 22,
+        subdomains: ['mt0','mt1','mt2','mt3'],
+        attribution: 'Google Maps'
+    }).addTo(map);
+
+    var boatMarker = null;
+    var currentHeading = 0;
+    var boatTrail = [];
+    var trailLine = L.polyline([], { color: '#00e6c8', weight: 2, opacity: 0.5, dashArray: '6 4' }).addTo(map);
+
+    function createBoatIcon(heading) {
+        return L.divIcon({
+            className: '',
+            iconSize: [44, 44],
+            iconAnchor: [22, 22],
+            html: '<svg width="44" height="44" viewBox="0 0 44 44" style="transform:rotate(' + heading + 'deg);transition:transform 0.3s ease;filter:drop-shadow(0 0 6px rgba(0,230,200,0.6))">' +
+                '<polygon points="22,4 34,38 22,30 10,38" fill="#00e6c8" stroke="#00ffcc" stroke-width="1.5" opacity="0.95"/>' +
+                '<circle cx="22" cy="24" r="3" fill="#fff" opacity="0.8"/>' +
+                '</svg>'
+        });
+    }
+
+    function updateBoatPosition(lat, lon, heading) {
+        currentHeading = heading;
+        var pos = [lat, lon];
+        if (!boatMarker) {
+            boatMarker = L.marker(pos, { icon: createBoatIcon(heading) }).addTo(map).bindPopup("🚤 Vị trí Thuyền");
+            map.setView(pos, 18);
+        } else {
+            boatMarker.setLatLng(pos);
+            boatMarker.setIcon(createBoatIcon(heading));
+        }
+        boatTrail.push(pos);
+        if (boatTrail.length > 1000) boatTrail.shift();
+        trailLine.setLatLngs(boatTrail);
+    }
+
+    var targetMarker = null;
+    function updateTargetPosition(lat, lon) {
+        var pos = [lat, lon];
+        if (!targetMarker) {
+            var victimSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'>" +
+                "<circle cx='18' cy='18' r='16' fill='rgba(255,82,82,0.18)' stroke='rgba(255,82,82,0.5)' stroke-width='1'>" +
+                "<animate attributeName='r' values='10;16;10' dur='2s' repeatCount='indefinite'/>" +
+                "<animate attributeName='opacity' values='1;0.4;1' dur='2s' repeatCount='indefinite'/>" +
+                "</circle><circle cx='18' cy='18' r='6' fill='#ff5252' stroke='#fff' stroke-width='2'/></svg>";
+            var victimIcon = L.divIcon({html: victimSvg, iconSize: [36,36], iconAnchor: [18,18], className: ''});
+            targetMarker = L.marker(pos, {icon: victimIcon}).addTo(map).bindPopup("<b>🆘 VICTIM (Nạn nhân)</b>");
+        } else {
+            targetMarker.setLatLng(pos);
+        }
+    }
+
+    var waypoints = [];
+    var waypointMarkers = [];
+    var polyline = L.polyline([], { color: '#ff6b6b', weight: 2, dashArray: '8 4' }).addTo(map);
+
+    map.on('click', function(e) {
+        var lat = e.latlng.lat;
+        var lng = e.latlng.lng;
+        waypoints.push({ lat: lat, lng: lng });
+
+        var popupContent = "<b>Điểm " + waypoints.length + "</b><br>" +
+                           "Lat: " + lat.toFixed(6) + "<br>" +
+                           "Lng: " + lng.toFixed(6);
+
+        var marker = L.marker([lat, lng]).addTo(map)
+            .bindPopup(popupContent).openPopup();
+        waypointMarkers.push(marker);
+        polyline.addLatLng(e.latlng);
+        updateWaypointsList();
+    });
+
+    function updateWaypointsList() {
+        var listDiv = document.getElementById("waypoints-list");
+        if (waypoints.length === 0) {
+            listDiv.innerHTML = "<i>Chưa có điểm nào...</i>";
+            return;
+        }
+        var html = "<b style='color:#00b4d8'>Danh sách điểm:</b><br>";
+        waypoints.forEach(function(pt, index) {
+            html += (index + 1) + ". " + pt.lat.toFixed(6) + ", " + pt.lng.toFixed(6) + "<br>";
+        });
+        listDiv.innerHTML = html;
+        listDiv.scrollTop = listDiv.scrollHeight;
+    }
+
+    function clearWaypoints() {
+        waypoints = [];
+        waypointMarkers.forEach(function(m) { map.removeLayer(m); });
+        waypointMarkers = [];
+        polyline.setLatLngs([]);
+        updateWaypointsList();
+        showToast('🗑️ Đã xóa tất cả waypoint');
+    }
+
+    function updateCompass(heading) {
+        document.getElementById('valHeading').textContent = heading.toFixed(1);
+        document.getElementById('boat-heading').textContent = heading.toFixed(1) + "°";
+        document.getElementById('compassArrow').style.transform =
+            'translateX(-50%) translateY(-100%) rotate(' + heading + 'deg)';
+    }
+
+    function showToast(msg) {
+        var t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(window._toastTimer);
+        window._toastTimer = setTimeout(function() { t.classList.remove('show'); }, 2500);
+    }
+
+    var mqttBroker = "broker.emqx.io";
+    var mqttPort = 8084;
+    var clientId = "pc_shore_" + Math.random().toString(16).substr(2, 8);
+    var client = new Paho.MQTT.Client(mqttBroker, mqttPort, "/mqtt", clientId);
+
+    client.onConnectionLost = function(responseObject) {
+        document.getElementById("mqtt-status").innerText = "MQTT: Mất kết nối!";
+        document.getElementById("mqtt-status").style.color = "#ff4757";
+    };
+
+    client.onMessageArrived = function(message) {
+        if (message.destinationName === "usv/boat1/status") {
+            try {
+                var status = JSON.parse(message.payloadString);
+                var piStatusEl = document.getElementById("pi-status");
+                lastHeartbeat = Date.now();
+                var gpsIcon = status.gps_ok ? "✅" : "❌";
+                var loraIcon = status.lora_ok ? "✅" : "❌";
+                piStatusEl.innerText = "🟢 Pi: Online | GPS: " + gpsIcon + " | LoRa: " + loraIcon;
+                piStatusEl.style.color = "#00e676";
+                if (status.heading != null) updateCompass(status.heading);
+                if (status.left_motor != null && status.right_motor != null) {
+                    document.getElementById("boat-motors").innerText = status.left_motor + "% | " + status.right_motor + "%";
+                }
+            } catch(e) {}
+        }
+
+        if (message.destinationName === "usv/boat1/telemetry") {
+            try {
+                var data = JSON.parse(message.payloadString);
+                if (data.lat && data.lon) {
+                    var txt = "📍 " + data.lat.toFixed(6) + ", " + data.lon.toFixed(6);
+                    document.getElementById("boat-gps").innerText = txt;
+
+                    if (data.distance !== undefined) {
+                        document.getElementById("boat-dist").innerText = data.distance + " m";
+                    }
+                    if (data.left_motor !== undefined && data.right_motor !== undefined) {
+                        document.getElementById("boat-motors").innerText = data.left_motor + "% | " + data.right_motor + "%";
+                    }
+
+                    var heading = data.heading || 0;
+                    updateBoatPosition(data.lat, data.lon, heading);
+                    updateCompass(heading);
+                }
+                if (data.remote_lat && data.remote_lon) {
+                    updateTargetPosition(data.remote_lat, data.remote_lon);
+                }
+            } catch(e) {}
+        }
+    };
+
+    client.connect({
+        useSSL: true,
+        onSuccess: function() {
+            document.getElementById("mqtt-status").innerText = "MQTT Broker: Đã kết nối 🟢";
+            document.getElementById("mqtt-status").style.color = "#00e676";
+            client.subscribe("usv/boat1/telemetry");
+            client.subscribe("usv/boat1/status");
+            showToast('✅ Đã kết nối MQTT Broker thành công!');
+        },
+        onFailure: function(e) {
+            document.getElementById("mqtt-status").innerText = "MQTT Broker: Lỗi kết nối!";
+            document.getElementById("mqtt-status").style.color = "#ff4757";
+        }
+    });
+
+    // === Theo dõi trạng thái Pi (heartbeat) ===
+    var lastHeartbeat = 0;
+    setInterval(function() {
+        var now = Date.now();
+        var piStatusEl = document.getElementById("pi-status");
+        if (now - lastHeartbeat > 15000) {
+            piStatusEl.innerText = "🔴 Pi: Mất kết nối!";
+            piStatusEl.style.color = "#ff4757";
+        }
+    }, 2000);
+
+    // ===================== GỬI LỆNH (giống file gốc) =====================
+    function uploadMission() {
+        if (waypoints.length === 0) {
+            showToast('⚠️ Hãy click bản đồ để chọn ít nhất 1 điểm!');
+            return;
+        }
+        var payload = JSON.stringify({ mission: waypoints });
+        var message = new Paho.MQTT.Message(payload);
+        message.destinationName = "usv/boat1/command/mission";
+        client.send(message);
+        showToast('📤 Đã gửi ' + waypoints.length + ' điểm waypoint!');
+    }
+
+    function startMission() {
+        var message = new Paho.MQTT.Message("start");
+        message.destinationName = "usv/boat1/command/start";
+        client.send(message);
+        showToast('🚀 Đã gửi lệnh Chạy!');
+    }
+</script>
+</body>
+</html>
