@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>USV Control Center</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            height: 100vh
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh
+        }
+
+        .panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(15, 20, 35, 0.94);
+            backdrop-filter: blur(16px);
+            padding: 14px 16px;
+            border-radius: 14px;
+            width: 280px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            border: 1px solid rgba(0, 230, 200, 0.12);
+            color: #e0e6f0;
+            max-height: calc(100vh - 30px);
+            overflow-y: auto
+        }
+
+        .panel::-webkit-scrollbar {
+            width: 4px
+        }
+
+        .panel::-webkit-scrollbar-thumb {
+            background: rgba(0, 230, 200, 0.3);
+            border-radius: 2px
+        }
+
+        .panel h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #00e6c8, #00b4d8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        .panel p {
+            margin: 3px 0;
+            font-size: 12px;
+            color: #b0b8cc
+        }
+
+        .panel hr {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            margin: 8px 0
+        }
+
+        #pi-status {
+            font-weight: 600;
+            color: #ff4757;
+            font-size: 12px
+        }
+
+        #boat-gps {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #00e6c8
+        }
+
+        #victim-status {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 8px;
+            margin: 6px 0;
+            text-align: center;
+            transition: all 0.3s
+        }
+
+        .victim-none {
+            background: rgba(255, 255, 255, 0.04);
+            color: #8892a6;
+            border: 1px solid rgba(255, 255, 255, 0.06)
+        }
+
+        .victim-detected {
+            background: rgba(255, 82, 82, 0.15);
+            color: #ff5252;
+            border: 1px solid rgba(255, 82, 82, 0.4);
+            animation: victimPulse 1.5s ease-in-out infinite
+        }
+
+        @keyframes victimPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 4px rgba(255, 82, 82, 0.2)
+            }
+
+            50% {
+                box-shadow: 0 0 16px rgba(255, 82, 82, 0.5)
+            }
+        }
+
+        .sec-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 600;
+            margin-bottom: 6px
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 9px;
+            margin-top: 6px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 12px;
+            color: #fff;
+            transition: all 0.2s;
+            box-sizing: border-box
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3)
+        }
+
+        .btn:active {
+            transform: scale(0.97)
+        }
+
+        /* Mode selector */
+        .mode-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 8px
+        }
+
+        .mode-tab {
+            flex: 1;
+            padding: 8px 0;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            background: transparent;
+            color: #8892a6;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center
+        }
+
+        .mode-tab.active-auto {
+            border-color: #00b4d8;
+            color: #00e6c8;
+            background: rgba(0, 180, 216, 0.12)
+        }
+
+        .mode-tab.active-manual {
+            border-color: #f39c12;
+            color: #f39c12;
+            background: rgba(243, 156, 18, 0.12)
+        }
+
+        .mode-panel {
+            display: none;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            margin-bottom: 6px
+        }
+
+        .mode-panel.show {
+            display: block
+        }
+
+        .stop-btn {
+            background: linear-gradient(135deg, #ff4757, #c0392b) !important;
+            font-size: 14px !important;
+            padding: 12px !important;
+            letter-spacing: 1px
+        }
+
+        .start-btn {
+            background: linear-gradient(135deg, #00b341, #00e676) !important
+        }
+
+        /* Compass */
+        .compass-box {
+            text-align: center;
+            margin: 6px 0
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 12px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace
+        }
+
+        .info-label {
+            color: #8892a6
+        }
+
+        .info-value {
+            color: #00e6c8;
+            font-weight: 700
+        }
+
+        .compass-wrap {
+            display: flex;
+            justify-content: center;
+            margin-top: 6px
+        }
+
+        .compass {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 2px solid rgba(0, 230, 200, 0.25);
+            position: relative;
+            background: radial-gradient(circle, rgba(0, 230, 200, 0.04), transparent)
+        }
+
+        .compass-arrow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 3px;
+            height: 32px;
+            background: linear-gradient(to top, transparent, #00e6c8, #00ffcc);
+            transform-origin: bottom center;
+            transform: translateX(-50%) translateY(-100%) rotate(0deg);
+            border-radius: 2px;
+            transition: transform 0.3s ease
+        }
+
+        .compass-arrow::after {
+            content: '';
+            position: absolute;
+            top: -3px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 7px solid #00ffcc
+        }
+
+        .clbl {
+            position: absolute;
+            font-size: 8px;
+            color: #8892a6;
+            font-weight: 600
+        }
+
+        .c-n {
+            top: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00e6c8
+        }
+
+        .c-s {
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%)
+        }
+
+        .c-e {
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%)
+        }
+
+        .c-w {
+            left: 4px;
+            top: 50%;
+            transform: translateY(-50%)
+        }
+
+        .heading-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 700;
+            color: #00e6c8;
+            margin-top: 2px
+        }
+
+        .toast {
+            position: absolute;
+            z-index: 2000;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-10px);
+            background: rgba(0, 230, 200, 0.15);
+            border: 1px solid rgba(0, 230, 200, 0.3);
+            border-radius: 12px;
+            padding: 10px 20px;
+            font-size: 13px;
+            color: #00e6c8;
+            opacity: 0;
+            transition: all 0.3s;
+            pointer-events: none;
+            white-space: nowrap
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 10px !important
+        }
+
+        #waypoints-list {
+            max-height: 80px;
+            overflow-y: auto;
+            font-size: 10px;
+            margin: 6px 0;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 6px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #8892a6;
+            border: 1px solid rgba(255, 255, 255, 0.06)
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <div class="panel">
+        <h3>🚤 USV Control Center</h3>
+        <p id="mqtt-status">MQTT: Đang kết nối...</p>
+        <p id="pi-status">🔴 Pi: Chưa kết nối</p>
+        <p id="boat-gps">Tọa độ: Đang đợi...</p>
+        <div id="victim-status" class="victim-none">📡 GPS nạn nhân: Chưa phát hiện</div>
+        <hr>
+
+        <!-- NÚT DỪNG KHẨN CẤP -->
+        <button class="btn stop-btn" onclick="doStop()">🛑 DỪNG KHẨN CẤP</button>
+        <hr>
+
+        <!-- CHỌN CHẾ ĐỘ -->
+        <div class="sec-title" style="color:#00e6c8">⚙️ Chọn chế độ</div>
+        <div class="mode-tabs">
+            <div class="mode-tab" id="tabAuto" onclick="selectTab('auto')">🤖 TỰ ĐỘNG</div>
+            <div class="mode-tab" id="tabManual" onclick="selectTab('manual')">🎮 TAY CẦM</div>
+        </div>
+
+        <!-- Panel AUTO -->
+        <div class="mode-panel" id="panelAuto">
+            <div class="sec-title" style="color:#00b4d8">🏎️ Tốc độ (0-255)</div>
+            <input type="range" id="speedSlider" min="0" max="255" value="150"
+                style="width:100%;accent-color:#00e6c8;cursor:pointer"
+                oninput="document.getElementById('speedVal').innerText=this.value">
+            <div
+                style="text-align:center;font-size:18px;font-weight:700;color:#00e6c8;font-family:'JetBrains Mono',monospace;margin:4px 0">
+                <span id="speedVal">150</span> <span style="font-size:11px;color:#8892a6">/ 255</span></div>
+            <button class="btn start-btn" onclick="startAuto()">🚀 BẮT ĐẦU TỰ ĐỘNG</button>
+        </div>
+
+        <!-- Panel MANUAL -->
+        <div class="mode-panel" id="panelManual">
+            <p style="color:#f39c12;font-size:11px;margin:0 0 8px">Bật tay cầm RC rồi nhấn nút bên dưới</p>
+            <button class="btn" style="background:linear-gradient(135deg,#f39c12,#e67e22)" onclick="startManual()">🎮
+                BẮT ĐẦU TAY CẦM</button>
+        </div>
+
+        <!-- Trạng thái hiện tại -->
+        <div id="active-status" style="text-align:center;margin:8px 0;font-size:13px;font-weight:700;color:#ff4757">🛑
+            ĐÃ DỪNG</div>
+        <hr>
+
+        <!-- LA BÀN -->
+        <div class="compass-box">
+            <div class="sec-title" style="color:#00e6c8">🧭 Telemetry</div>
+            <div class="info-row"><span class="info-label">Heading</span><span class="info-value"
+                    id="boat-heading">—</span></div>
+            <div class="info-row"><span class="info-label">Distance</span><span class="info-value"
+                    id="boat-dist">—</span></div>
+            <div class="info-row"><span class="info-label">Motor L|R</span><span class="info-value" id="boat-motors">0%
+                    | 0%</span></div>
+            <div class="compass-wrap">
+                <div class="compass">
+                    <span class="clbl c-n">N</span><span class="clbl c-s">S</span>
+                    <span class="clbl c-e">E</span><span class="clbl c-w">W</span>
+                    <div class="compass-arrow" id="compassArrow"></div>
+                </div>
+            </div>
+            <div class="heading-val"><span id="valHeading">0</span>°</div>
+        </div>
+        <hr>
+
+        <!-- WAYPOINTS -->
+        <div class="sec-title" style="color:#8892a6">📍 Waypoints (click bản đồ)</div>
+        <div id="waypoints-list"><i>Chưa có điểm nào...</i></div>
+        <button class="btn" onclick="uploadMission()" style="background:linear-gradient(135deg,#0077b6,#00b4d8)">📤 Gửi
+            Điểm</button>
+        <button class="btn" onclick="clearWaypoints()"
+            style="background:rgba(255,255,255,0.06);color:#8892a6;border:1px solid rgba(255,255,255,0.1)">🗑️ Xóa
+            Điểm</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script>
+        // ============ MAP ============
+        var map = L.map('map').setView([16.075444, 108.155151], 17);
+        L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 22, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: 'Google Maps'
+        }).addTo(map);
+
+        var boatMarker = null, boatTrail = [], targetMarker = null;
+        var trailLine = L.polyline([], { color: '#00e6c8', weight: 2, opacity: 0.5, dashArray: '6 4' }).addTo(map);
+        var currentNavMode = 'STOP'; // Theo dõi mode hiện tại từ Pi
+
+        function createBoatIcon(h) {
+            return L.divIcon({
+                className: '', iconSize: [44, 44], iconAnchor: [22, 22],
+                html: '<svg width="44" height="44" viewBox="0 0 44 44" style="transform:rotate(' + h + 'deg);transition:transform 0.3s;filter:drop-shadow(0 0 6px rgba(0,230,200,0.6))"><polygon points="22,4 34,38 22,30 10,38" fill="#00e6c8" stroke="#00ffcc" stroke-width="1.5" opacity="0.95"/><circle cx="22" cy="24" r="3" fill="#fff" opacity="0.8"/></svg>'
+            });
+        }
+        function updateBoatPosition(lat, lon, h) {
+            var pos = [lat, lon];
+            if (!boatMarker) { boatMarker = L.marker(pos, { icon: createBoatIcon(h) }).addTo(map).bindPopup("🚤 Thuyền"); map.setView(pos, 18) }
+            else { boatMarker.setLatLng(pos); boatMarker.setIcon(createBoatIcon(h)) }
+            boatTrail.push(pos); if (boatTrail.length > 1000) boatTrail.shift(); trailLine.setLatLngs(boatTrail);
+        }
+        function updateTargetPosition(lat, lon) {
+            var pos = [lat, lon];
+            if (!targetMarker) {
+                var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'><circle cx='18' cy='18' r='16' fill='rgba(255,82,82,0.18)' stroke='rgba(255,82,82,0.5)' stroke-width='1'><animate attributeName='r' values='10;16;10' dur='2s' repeatCount='indefinite'/><animate attributeName='opacity' values='1;0.4;1' dur='2s' repeatCount='indefinite'/></circle><circle cx='18' cy='18' r='6' fill='#ff5252' stroke='#fff' stroke-width='2'/></svg>";
+                targetMarker = L.marker(pos, { icon: L.divIcon({ html: svg, iconSize: [36, 36], iconAnchor: [18, 18], className: '' }) }).addTo(map).bindPopup("<b>🆘 Nạn nhân</b>");
+            } else targetMarker.setLatLng(pos);
+        }
+
+        // ============ WAYPOINTS ============
+        var waypoints = [], waypointMarkers = [];
+        var polyline = L.polyline([], { color: '#ff6b6b', weight: 2, dashArray: '8 4' }).addTo(map);
+        map.on('click', function (e) {
+            waypoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+            var m = L.marker([e.latlng.lat, e.latlng.lng]).addTo(map).bindPopup("<b>Điểm " + waypoints.length + "</b><br>" + e.latlng.lat.toFixed(6) + ", " + e.latlng.lng.toFixed(6)).openPopup();
+            waypointMarkers.push(m); polyline.addLatLng(e.latlng); updateWPList();
+        });
+        function updateWPList() {
+            var el = document.getElementById("waypoints-list");
+            if (!waypoints.length) { el.innerHTML = "<i>Chưa có điểm nào...</i>"; return }
+            var h = "<b style='color:#00b4d8'>Danh sách:</b><br>";
+            waypoints.forEach(function (p, i) { h += (i + 1) + ". " + p.lat.toFixed(6) + ", " + p.lng.toFixed(6) + "<br>" });
+            el.innerHTML = h; el.scrollTop = el.scrollHeight;
+        }
+        function clearWaypoints() { waypoints = []; waypointMarkers.forEach(function (m) { map.removeLayer(m) }); waypointMarkers = []; polyline.setLatLngs([]); updateWPList(); showToast('🗑️ Đã xóa') }
+        function uploadMission() {
+            if (!waypoints.length) { showToast('⚠️ Chưa có điểm!'); return }
+            var msg = new Paho.MQTT.Message(JSON.stringify({ mission: waypoints })); msg.destinationName = "usv/boat1/command/mission"; client.send(msg);
+            showToast('📤 Đã gửi ' + waypoints.length + ' điểm!');
+        }
+
+        // ============ COMPASS ============
+        function updateCompass(h) {
+            document.getElementById('valHeading').textContent = h.toFixed(1);
+            document.getElementById('boat-heading').textContent = h.toFixed(1) + "°";
+            document.getElementById('compassArrow').style.transform = 'translateX(-50%) translateY(-100%) rotate(' + h + 'deg)';
+        }
+        function showToast(msg) { var t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(window._tt); window._tt = setTimeout(function () { t.classList.remove('show') }, 2500) }
+
+        // ============ MQTT ============
+        var client = new Paho.MQTT.Client("broker.emqx.io", 8084, "/mqtt", "pc_" + Math.random().toString(16).substr(2, 8));
+        client.onConnectionLost = function () { document.getElementById("mqtt-status").innerText = "MQTT: Mất kết nối!"; document.getElementById("mqtt-status").style.color = "#ff4757" };
+        client.onMessageArrived = function (message) {
+            if (message.destinationName === "usv/boat1/status") {
+                try {
+                    var s = JSON.parse(message.payloadString);
+                    lastHB = Date.now();
+                    document.getElementById("pi-status").innerText = "🟢 Pi: Online | GPS: " + (s.gps_ok ? "✅" : "❌") + " | LoRa: " + (s.lora_ok ? "✅" : "❌");
+                    document.getElementById("pi-status").style.color = "#00e676";
+                    if (s.heading != null) updateCompass(s.heading);
+                    if (s.left_motor != null) document.getElementById("boat-motors").innerText = s.left_motor + "% | " + s.right_motor + "%";
+                    if (s.nav_mode) updateStatusLabel(s.nav_mode);
+                } catch (e) { }
+            }
+            if (message.destinationName === "usv/boat1/telemetry") {
+                try {
+                    var d = JSON.parse(message.payloadString);
+                    if (d.lat && d.lon) {
+                        document.getElementById("boat-gps").innerText = "📍 " + d.lat.toFixed(6) + ", " + d.lon.toFixed(6);
+                        if (d.distance !== undefined) document.getElementById("boat-dist").innerText = d.distance + " m";
+                        if (d.left_motor != null) document.getElementById("boat-motors").innerText = d.left_motor + "% | " + d.right_motor + "%";
+                        updateBoatPosition(d.lat, d.lon, d.heading || 0); updateCompass(d.heading || 0);
+                    }
+                    if (d.remote_lat && d.remote_lon) {
+                        updateTargetPosition(d.remote_lat, d.remote_lon);
+                        var vEl = document.getElementById('victim-status');
+                        vEl.className = 'victim-detected';
+                        var vDist = d.distance !== undefined ? ' | ' + d.distance + 'm' : '';
+                        var vMode = d.nav_mode === 'AUTO' ? ' | 🤖 TỰ ĐỘNG' : '';
+                        vEl.innerText = '🆘 NẠN NHÂN: ' + d.remote_lat.toFixed(6) + ', ' + d.remote_lon.toFixed(6) + vDist + vMode;
+                    } else {
+                        var vEl = document.getElementById('victim-status');
+                        vEl.className = 'victim-none';
+                        vEl.innerText = '📡 GPS nạn nhân: Chưa phát hiện';
+                    }
+                } catch (e) { }
+            }
+        };
+        client.connect({
+            useSSL: true, onSuccess: function () {
+                document.getElementById("mqtt-status").innerText = "MQTT: Đã kết nối 🟢"; document.getElementById("mqtt-status").style.color = "#00e676";
+                client.subscribe("usv/boat1/telemetry"); client.subscribe("usv/boat1/status"); showToast('✅ Đã kết nối MQTT!');
+            }, onFailure: function () { document.getElementById("mqtt-status").innerText = "MQTT: Lỗi!"; document.getElementById("mqtt-status").style.color = "#ff4757" }
+        });
+
+        var lastHB = 0;
+        setInterval(function () { if (Date.now() - lastHB > 15000) { document.getElementById("pi-status").innerText = "🔴 Pi: Mất kết nối!"; document.getElementById("pi-status").style.color = "#ff4757" } }, 2000);
+
+        // ============ ĐIỀU KHIỂN ============
+        function mqttSend(topic, payload) { var m = new Paho.MQTT.Message(payload); m.destinationName = topic; client.send(m) }
+
+        function selectTab(tab) {
+            // Nếu đang chạy AUTO mà nhấn sang MANUAL → cảnh báo phải DỪNG trước
+            if (tab === 'manual' && currentNavMode === 'AUTO') {
+                showToast('⚠️ Nhấn DỪNG KHẨN CẤP trước khi chuyển sang Tay Cầm!');
+                return;
+            }
+            // Nếu đang chạy MANUAL mà nhấn sang AUTO → cảnh báo phải DỪNG trước  
+            if (tab === 'auto' && currentNavMode === 'MANUAL') {
+                showToast('⚠️ Nhấn DỪNG KHẨN CẤP trước khi chuyển sang Tự Động!');
+                return;
+            }
+            document.getElementById('tabAuto').className = 'mode-tab';
+            document.getElementById('tabManual').className = 'mode-tab';
+            document.getElementById('panelAuto').className = 'mode-panel';
+            document.getElementById('panelManual').className = 'mode-panel';
+            if (tab === 'auto') { document.getElementById('tabAuto').className = 'mode-tab active-auto'; document.getElementById('panelAuto').className = 'mode-panel show' }
+            else { document.getElementById('tabManual').className = 'mode-tab active-manual'; document.getElementById('panelManual').className = 'mode-panel show' }
+        }
+
+        function startAuto() {
+            var spd = document.getElementById('speedSlider').value;
+            mqttSend("usv/boat1/command/speed", spd.toString());
+            mqttSend("usv/boat1/command/mode", "AUTO");
+            showToast('🤖 Tự động | Tốc độ: ' + spd + ' | ⚠️ Tay cầm RC đã bị vô hiệu hóa!');
+        }
+        function startManual() {
+            mqttSend("usv/boat1/command/mode", "MANUAL");
+            showToast('🎮 Đã bật tay cầm RC! Autopilot đã tắt.');
+        }
+        function doStop() {
+            mqttSend("usv/boat1/command/mode", "STOP");
+            currentNavMode = 'STOP';
+            showToast('🛑 ĐÃ DỪNG! Nhấn "BẮT ĐẦU TAY CẦM" để điều khiển RC.');
+            // Mở sẵn panel MANUAL để user dễ chuyển sang tay cầm
+            document.getElementById('tabAuto').className = 'mode-tab';
+            document.getElementById('tabManual').className = 'mode-tab active-manual';
+            document.getElementById('panelAuto').className = 'mode-panel';
+            document.getElementById('panelManual').className = 'mode-panel show';
+            updateStatusLabel('STOP');
+        }
+
+        function updateStatusLabel(mode) {
+            currentNavMode = mode;
+            var el = document.getElementById('active-status');
+            var btnManual = document.getElementById('tabManual');
+            var btnAuto = document.getElementById('tabAuto');
+            if (mode === 'AUTO') {
+                el.innerHTML = '🤖 ĐANG TỰ ĐỘNG<br><span style="font-size:10px;color:#ff6b6b">⚠️ Tay cầm RC bị khóa</span>';
+                el.style.color = '#00e6c8';
+                // Tự động highlight tab AUTO
+                btnAuto.className = 'mode-tab active-auto';
+                btnManual.className = 'mode-tab';
+                document.getElementById('panelAuto').className = 'mode-panel show';
+                document.getElementById('panelManual').className = 'mode-panel';
+            } else if (mode === 'MANUAL') {
+                el.innerHTML = '🎮 ĐANG LÁI TAY<br><span style="font-size:10px;color:#8892a6">Autopilot đã tắt</span>';
+                el.style.color = '#f39c12';
+                // Tự động highlight tab MANUAL
+                btnManual.className = 'mode-tab active-manual';
+                btnAuto.className = 'mode-tab';
+                document.getElementById('panelManual').className = 'mode-panel show';
+                document.getElementById('panelAuto').className = 'mode-panel';
+            } else {
+                el.innerHTML = '🛑 ĐÃ DỪNG<br><span style="font-size:10px;color:#8892a6">Chọn chế độ để bắt đầu</span>';
+                el.style.color = '#ff4757';
+            }
+        }
+    </script>
+</body>
+
+</html>
